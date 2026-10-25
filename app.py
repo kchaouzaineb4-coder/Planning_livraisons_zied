@@ -12,6 +12,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from pathlib import Path
+
+
 st.set_page_config(
     page_title="Planning Livraisons",
     page_icon=":material/local_shipping:",
@@ -1144,9 +1147,14 @@ PAGES = [
 
 
 @st.cache_data
-def logo_base64(chemin="logo.png"):
+def logo_base64():
+    chemin = Path(__file__).resolve().parent / "logo.png"
+
+    if not chemin.exists():
+        return None
+
     with open(chemin, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+        return base64.b64encode(f.read()).decode("utf-8")
 
 
 def nouvelle_importation():
@@ -1168,10 +1176,24 @@ def etape_faite(cle):
 
 def barre_laterale():
     with st.sidebar:
-        logo = f'<img src="data:image/png;base64,{logo_base64()}" alt="">' if os.path.exists("logo.png") else ""
-        st.markdown(f'<div class="brand">{logo}<div><div class="brand-name">Planning Livraisons</div>'
-                    f'<div class="brand-sub">Préparation des chargements ADV</div></div></div>',
-                    unsafe_allow_html=True)
+        logo_b64 = logo_base64()
+
+        logo = (
+            f'<img src="data:image/png;base64,{logo_b64}" alt="Logo SOPAL">'
+            if logo_b64
+            else ""
+        )
+
+        if not logo:
+            st.warning("Logo introuvable : vérifiez la présence de logo.png")
+
+        st.markdown(
+            f'<div class="brand">{logo}<div>'
+            f'<div class="brand-name">Planning Livraisons</div>'
+            f'<div class="brand-sub">Préparation des chargements ADV</div>'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
         st.markdown('<div class="side-label">Parcours</div>', unsafe_allow_html=True)
         for i, (cle, libelle, icone, _) in enumerate(PAGES, start=1):
             courant = S.page == cle
