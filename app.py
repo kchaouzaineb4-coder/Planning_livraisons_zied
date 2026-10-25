@@ -620,25 +620,49 @@ def _choix_defaut(r):
     return None, None
 
 
+def _deja_pris(v, champ, valeur):
+    """Renvoie le voyage validé qui utilise déjà cette valeur (hors camion loué, partagé), sinon None."""
+    commun = m.VEHICULE_CAMION if champ == "Véhicule" else m.CHAUFFEUR_CAMION
+    if not valeur or valeur == commun:
+        return None
+    for w, a in S.attributions.items():
+        if w != v and S.validations.get(w) == "Oui" and a.get(champ) == valeur:
+            return w
+    return None
+
+
 def _maj_plan(cle, vehicules, vue):
-    """Enregistre les cases 'Valider' et les attributions saisies dans le tableau du plan."""
+    """Enregistre les cases 'Valider' et les attributions, en refusant les doublons."""
+    refus = []
     for i, ch in S[cle]["edited_rows"].items():
         i = int(i)
         v = vehicules[i]
         if "Valider" in ch:
             if ch["Valider"]:
-                S.validations[v] = "Oui"
+                a = S.attributions.get(v, {})
+                conflit = (_deja_pris(v, "Véhicule", a.get("Véhicule"))
+                           or _deja_pris(v, "Chauffeur_complet", a.get("Chauffeur_complet")))
+                if conflit:
+                    refus.append(f"{v} ne peut pas être validé : son véhicule ou chauffeur est déjà attribué à {conflit}")
+                else:
+                    S.validations[v] = "Oui"
             else:
                 S.validations.pop(v, None)
         if "Véhicule attribué" in ch or "Chauffeur" in ch:
-            actuel = S.attributions.get(v) or {"Véhicule": vue["Véhicule attribué"].iloc[i],
-                                                "Chauffeur_complet": vue["Chauffeur"].iloc[i]}
-            if "Véhicule attribué" in ch:
-                actuel["Véhicule"] = ch["Véhicule attribué"]
-            if "Chauffeur" in ch:
-                actuel["Chauffeur_complet"] = ch["Chauffeur"]
+            actuel = dict(S.attributions.get(v) or {"Véhicule": vue["Véhicule attribué"].iloc[i],
+                                                    "Chauffeur_complet": vue["Chauffeur"].iloc[i]})
+            for col, champ in (("Véhicule attribué", "Véhicule"), ("Chauffeur", "Chauffeur_complet")):
+                if col in ch:
+                    pris = _deja_pris(v, champ, ch[col])
+                    if pris:
+                        refus.append(f"{ch[col]} est déjà attribué au voyage {pris}")
+                    else:
+                        actuel[champ] = ch[col]
             S.attributions[v] = actuel
     invalider_validation()  # toute modification impose de regénérer les codes
+    if refus:
+        flash(" ; ".join(refus), "error")
+        S.ver_editeur += 1  # réinitialise le tableau : la cellule refusée revient à sa valeur précédente
 
 
 def cocher_tout(vehicules, valeur):
@@ -1147,14 +1171,9 @@ PAGES = [
 
 
 @st.cache_data
-def logo_base64():
-    chemin = Path(__file__).resolve().parent / "logo.png"
-
-    if not chemin.exists():
-        return None
-
+def logo_base64(chemin="logo.png"):
     with open(chemin, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+        return base64.b64encode(f.read()).decode()
 
 
 def nouvelle_importation():
@@ -1176,24 +1195,10 @@ def etape_faite(cle):
 
 def barre_laterale():
     with st.sidebar:
-        logo_b64 = logo_base64()
-
-        logo = (
-            f'<img src="data:image/png;base64,{logo_b64}" alt="Logo SOPAL">'
-            if logo_b64
-            else ""
-        )
-
-        if not logo:
-            st.warning("Logo introuvable : vérifiez la présence de logo.png")
-
-        st.markdown(
-            f'<div class="brand">{logo}<div>'
-            f'<div class="brand-name">Planning Livraisons</div>'
-            f'<div class="brand-sub">Préparation des chargements ADV</div>'
-            f'</div></div>',
-            unsafe_allow_html=True
-        )
+        logo = f'<img src="data:image/png;base64,{logo_base64()}" alt="">' if os.path.exists("logo.png") else ""
+        st.markdown(f'<div class="brand">{logo}<div><div class="brand-name">Planning Livraisons</div>'
+                    f'<div class="brand-sub">Préparation des chargements ADV</div></div></div>',
+                    unsafe_allow_html=True)
         st.markdown('<div class="side-label">Parcours</div>', unsafe_allow_html=True)
         for i, (cle, libelle, icone, _) in enumerate(PAGES, start=1):
             courant = S.page == cle
